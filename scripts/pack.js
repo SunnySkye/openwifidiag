@@ -15,8 +15,8 @@ const PLATFORMS = {
   "darwin-x64": { cpu: "x64", os: "darwin", exe: "openwifidiag" },
   "linux-arm64": { cpu: "arm64", os: "linux", exe: "openwifidiag" },
   "linux-x64": { cpu: "x64", os: "linux", exe: "openwifidiag" },
-  "win32-x64": { cpu: "x64", os: "win32", exe: "openwifidiag.exe" },
-  "win32-arm64": { cpu: "arm64", os: "win32", exe: "openwifidiag.exe" },
+  // The x64 binary runs on Windows on Arm through the OS x64 emulation layer.
+  "win32-x64": { cpu: ["x64", "arm64"], os: "win32", exe: "openwifidiag.exe" },
 };
 
 const npmRoot = path.join(root, "npm");

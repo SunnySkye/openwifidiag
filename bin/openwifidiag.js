@@ -11,7 +11,8 @@ const PLATFORMS = {
   "darwin-x64": "openwifidiag-darwin-x64",
   "linux-arm64": "openwifidiag-linux-arm64",
   "linux-x64": "openwifidiag-linux-x64",
-  "win32-arm64": "openwifidiag-win32-arm64", // reserved, built when needed
+  // Windows on Arm supports the x64 binary through Windows' x64 emulation.
+  "win32-arm64": "openwifidiag-win32-x64",
   "win32-x64": "openwifidiag-win32-x64",
 };
 

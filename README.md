@@ -62,16 +62,16 @@ Release, so Rust and a source checkout are not required:
 
 ```sh
 # macOS
-curl -fsSL https://raw.githubusercontent.com/SunnySkye/openwifidiag/main/scripts/install-macos.sh | sh
+curl -fsSL https://github.com/SunnySkye/openwifidiag/releases/latest/download/install-macos.sh | sh
 
 # Linux
-curl -fsSL https://raw.githubusercontent.com/SunnySkye/openwifidiag/main/scripts/install-linux.sh | sh
+curl -fsSL https://github.com/SunnySkye/openwifidiag/releases/latest/download/install-linux.sh | sh
 ```
 
 On Windows PowerShell:
 
 ```powershell
-irm https://raw.githubusercontent.com/SunnySkye/openwifidiag/main/scripts/install-windows.ps1 | iex
+irm https://github.com/SunnySkye/openwifidiag/releases/latest/download/install-windows.ps1 | iex
 ```
 
 You can also download the appropriate installer directly from the repository's

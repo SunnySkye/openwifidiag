@@ -23,6 +23,33 @@ pub fn platform_scanner(iface: Option<&str>) -> Result<Box<dyn Scanner>> {
     macos::create_scanner(iface)
 }
 
+/// Ask for any OS permission needed by the scanner. This must run on the main
+/// thread on macOS, before scans are dispatched to worker threads.
+#[cfg(target_os = "macos")]
+pub fn prepare_permissions() {
+    macos::request_location_permission();
+}
+
+#[cfg(target_os = "macos")]
+pub fn request_permissions_interactively() {
+    macos::wait_for_location_permission();
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn request_permissions_interactively() {}
+
+#[cfg(not(target_os = "macos"))]
+pub fn prepare_permissions() {}
+
+/// Give macOS' main run loop a chance to deliver Core Location events.
+#[cfg(target_os = "macos")]
+pub fn poll_platform_events() {
+    macos::poll_location_events();
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn poll_platform_events() {}
+
 #[cfg(target_os = "linux")]
 pub fn platform_scanner(iface: Option<&str>) -> Result<Box<dyn Scanner>> {
     Ok(Box::new(linux::IwScanner::new(iface.map(str::to_owned))))

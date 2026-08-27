@@ -1,4 +1,5 @@
 mod app;
+mod diagnostics;
 mod model;
 mod scanner;
 mod ui;
@@ -18,6 +19,9 @@ use app::{App, SortMode};
 #[derive(Parser)]
 #[command(name = "openwifidiag", version, about = "Terminal WiFi diagnostics — scan and monitor near-by networks")]
 struct Cli {
+    /// Request macOS Location Services access and wait for a response.
+    #[arg(long, hide = true)]
+    request_location: bool,
     /// Print one scan as JSON and exit (no TUI).
     #[arg(long)]
     json: bool,
@@ -62,6 +66,12 @@ fn run() -> Result<()> {
     let cli = Cli::parse();
     let interval = Duration::from_secs(cli.interval.max(1));
 
+    if cli.request_location {
+        scanner::request_permissions_interactively();
+        return Ok(());
+    }
+    scanner::prepare_permissions();
+
     if cli.json {
         return run_json(cli.iface.as_deref());
     }
@@ -99,6 +109,7 @@ fn event_loop(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, interval: D
     app.start_scan();
 
     loop {
+        scanner::poll_platform_events();
         app.on_tick();
         terminal.draw(|f| ui::draw(f, &mut app))?;
 
@@ -121,7 +132,10 @@ fn event_loop(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, interval: D
 fn handle_key(app: &mut App, code: KeyCode) {
     match code {
         KeyCode::Char('q') => app.should_quit = true,
+        KeyCode::Esc | KeyCode::Backspace if app.diagnostic.is_some() => app.stop_diagnostic(),
+        KeyCode::Enter | KeyCode::Char('d') if app.diagnostic.is_none() => app.start_diagnostic(),
         KeyCode::Char('r') => app.start_scan(),
+        _ if app.diagnostic.is_some() => {}
         KeyCode::Char('s') => {
             app.sort = app.sort.next();
             app.sort();

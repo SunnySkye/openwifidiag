@@ -8,8 +8,10 @@
 use anyhow::{anyhow, Result};
 use objc::{class, msg_send, sel, sel_impl};
 use objc::runtime::Object;
+use serde::Deserialize;
 use std::ffi::CStr;
 use std::os::raw::c_char;
+use std::process::Command;
 
 use super::Scanner;
 use crate::model::{Band, Security, WifiNetwork};
@@ -35,6 +37,57 @@ pub fn create_scanner(iface: Option<&str>) -> Result<Box<dyn Scanner>> {
 
 #[link(name = "CoreWLAN", kind = "framework")]
 extern "C" {}
+
+#[link(name = "CoreLocation", kind = "framework")]
+extern "C" {}
+
+// Retained for the lifetime of the process. Core Location requires the
+// manager to stay alive while macOS presents and records the permission.
+static mut LOCATION_MANAGER: Id = std::ptr::null_mut();
+
+/// Trigger the system Location Services prompt. The embedded Info.plist
+/// (added by build.rs) supplies the text shown by macOS and gives this command
+/// line executable a stable identity in Privacy & Security.
+pub fn request_location_permission() {
+    unsafe {
+        let enabled: u8 = msg_send![class!(CLLocationManager), locationServicesEnabled];
+        if enabled == 0 {
+            return;
+        }
+        if LOCATION_MANAGER.is_null() {
+            let manager: Id = msg_send![class!(CLLocationManager), new];
+            LOCATION_MANAGER = manager;
+        }
+        let status: i64 = msg_send![LOCATION_MANAGER, authorizationStatus];
+        // kCLAuthorizationStatusNotDetermined
+        if status == 0 {
+            let _: () = msg_send![LOCATION_MANAGER, requestWhenInUseAuthorization];
+        }
+    }
+}
+
+pub fn poll_location_events() {
+    unsafe {
+        let run_loop: Id = msg_send![class!(NSRunLoop), currentRunLoop];
+        let until: Id = msg_send![class!(NSDate), dateWithTimeIntervalSinceNow: 0.001f64];
+        let _: () = msg_send![run_loop, runUntilDate: until];
+    }
+}
+
+/// Used when Launch Services starts the app bundle. Keeping the process alive
+/// allows macOS to display the consent sheet and record the user's response.
+pub fn wait_for_location_permission() {
+    request_location_permission();
+    let started = std::time::Instant::now();
+    while started.elapsed() < std::time::Duration::from_secs(60) {
+        poll_location_events();
+        let status: i64 = unsafe { msg_send![LOCATION_MANAGER, authorizationStatus] };
+        if status != 0 {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+}
 
 /// Copy an NSString into an owned Rust String. Returns "" for null.
 unsafe fn ns_string(ns: Id) -> String {
@@ -180,7 +233,16 @@ impl Scanner for CorewlanScanner {
             let out = objc_exception::r#try(|| self.run_scan());
             let _: () = msg_send![pool, drain];
             match out {
-                Ok(Ok(res)) => Ok(res),
+                Ok(Ok(res)) => {
+                    if !res.is_empty() && res.iter().all(|network| network.ssid == "<hidden>") {
+                        if let Ok(fallback) = scan_via_apple_swift() {
+                            if fallback.iter().any(|network| network.ssid != "<hidden>") {
+                                return Ok(fallback);
+                            }
+                        }
+                    }
+                    Ok(res)
+                }
                 Ok(Err(e)) => Err(e),
                 Err(exc) => {
                     let _ = exc; // don't message the exception object; it may re-throw
@@ -194,6 +256,59 @@ impl Scanner for CorewlanScanner {
 
     fn backend_name(&self) -> &str {
         "CoreWLAN"
+    }
+}
+
+#[derive(Deserialize)]
+struct SwiftNetwork {
+    ssid: String,
+    bssid: String,
+    rssi: i32,
+    channel: u32,
+    description: String,
+}
+
+fn scan_via_apple_swift() -> Result<Vec<WifiNetwork>> {
+    let output = Command::new("xcrun")
+        .args(["swift", "-e", include_str!("../../resources/macos/scan.swift")])
+        .output()?;
+    if !output.status.success() {
+        return Err(anyhow!(
+            "Apple Swift CoreWLAN fallback failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    let rows: Vec<SwiftNetwork> = serde_json::from_slice(&output.stdout)?;
+    Ok(rows
+        .into_iter()
+        .map(|row| {
+            let channel = (row.channel > 0).then_some(row.channel);
+            WifiNetwork {
+                ssid: row.ssid,
+                bssid: row.bssid,
+                channel,
+                band: Band::from_freq(None, channel),
+                rssi: row.rssi,
+                security: security_from_text(&row.description),
+            }
+        })
+        .collect())
+}
+
+fn security_from_text(text: &str) -> Security {
+    let text = text.to_uppercase();
+    if text.contains("WPA3") {
+        Security::Wpa3
+    } else if text.contains("WPA2") {
+        Security::Wpa2
+    } else if text.contains("WPA") {
+        Security::Wpa
+    } else if text.contains("WEP") {
+        Security::Wep
+    } else if text.contains("NONE") || text.contains("OPEN") {
+        Security::Open
+    } else {
+        Security::Encrypted
     }
 }
 

@@ -3,6 +3,9 @@
 # Requires an `NPM_TOKEN` repository secret (npm granular access token with publish rights).
 name: release
 
+permissions:
+  contents: write
+
 on:
   push:
     tags: ["v*"]
@@ -62,3 +65,21 @@ jobs:
             fi
           done
           npm publish --access public .
+
+  github-release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Name installer assets
+        run: |
+          for platform in darwin-arm64 darwin-x64 linux-arm64 linux-x64; do
+            mv "artifacts/$platform/openwifidiag" "openwifidiag-$platform"
+          done
+          mv artifacts/win32-x64/openwifidiag.exe openwifidiag-win32-x64.exe
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" openwifidiag-* --repo "$GITHUB_REPOSITORY" --generate-notes

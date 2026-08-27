@@ -9,6 +9,9 @@ signal strength) on macOS, Linux, and Windows. Written in Rust on top of
 
 - Live, auto-refreshing table of discovered networks with colour-coded signal
   bars (green → red by RSSI).
+- Select an access point and press `Enter` or `d` for a live diagnostic view:
+  BSSID-specific signal history, latency, packet loss, and min/average/max
+  readings. This is useful for walking around and finding WiFi dead zones.
 - Columns: SSID, signal (bar + dBm), channel, band (2.4/5/6 GHz), BSSID,
   security classification (Open, WEP, WPA, WPA2, WPA3).
 - Input via platform-native backends:
@@ -32,7 +35,14 @@ openwifidiag --json   # one-shot JSON scan
 ```
 
 Keybindings: `q` quit, `r` refresh, `s` cycle sort, `↑/↓` or `j/k` navigate
-selection, `g`/`G` top/bottom.
+selection, `g`/`G` top/bottom, and `Enter` or `d` to diagnose the selected
+access point. In diagnostic view, press `Esc` or `Backspace` to return.
+
+When the scanner provides a BSSID, the diagnostic signal graph follows that
+specific access point even if several access points share an SSID. Otherwise,
+it follows the SSID and may switch between its access points. Latency and
+packet loss are measured once per second over the active network route to
+`1.1.1.1`; selecting an SSID does not connect to it automatically.
 
 ## Install via npm (recommended)
 
@@ -45,12 +55,42 @@ The npm package ships platform-specific binary packages under
 `optionalDependencies` (darwin-arm64/x64, linux-x64/arm64, win32-x64) and a
 tiny JS launcher in `bin/`.
 
+## Native installers
+
+The macOS installer packages files from the current checkout and does not use
+the network. The Linux and Windows installers use the matching release asset:
+
+```sh
+# macOS — run from a local checkout (the installer performs no downloads)
+./scripts/install-macos.sh
+
+# Linux
+curl -fsSL https://raw.githubusercontent.com/SunnySkye/openwifidiag/main/scripts/install-linux.sh | sh
+```
+
+On Windows PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/SunnySkye/openwifidiag/main/scripts/install-windows.ps1 | iex
+```
+
+Set `OPENWIFIDIAG_PREFIX` on macOS/Linux to change `/usr/local`, or pass
+`-InstallDir` on Windows. The macOS installer builds the checked-out source or
+uses `OPENWIFIDIAG_BINARY=/path/to/openwifidiag` when supplied; it never
+contacts GitHub or another remote service. Set `OPENWIFIDIAG_VERSION` (for
+example `v0.1.6`) to install a specific Linux release.
+
 ## Permissions
 
 - **Linux**: `iw scan` usually needs `CAP_NET_ADMIN` — run with `sudo`.
   `nmcli` fallback works as a normal user on most distros.
 - **macOS**: modern macOS redacts SSIDs/BSSIDs unless **Location Services**
-  is enabled for your terminal app. Grant it to see names.
+  recognizes the calling program. Developer-signed releases can request this
+  normally. For local or ad-hoc-signed builds that macOS refuses to register,
+  openwifidiag automatically scans through Apple's signed Swift toolchain.
+  This fallback requires the Xcode Command Line Tools
+  (`xcode-select --install`) and does not require a Location Services entry for
+  openwifidiag.
 - **Windows**: run from a normal terminal; the WLAN service must be running.
 
 ## Platform notes

@@ -2,6 +2,7 @@ use std::sync::mpsc::{channel, Receiver};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use crate::diagnostics::LiveDiagnostic;
 use crate::model::WifiNetwork;
 use crate::scanner::platform_scanner;
 
@@ -48,6 +49,7 @@ pub struct App {
     pub last_scan: Option<Instant>,
     pub scanning: bool,
     pub spinner_tick: usize,
+    pub diagnostic: Option<LiveDiagnostic>,
     rx: Option<Receiver<ScanEvent>>,
     iface: Option<String>,
     pub should_quit: bool,
@@ -66,6 +68,7 @@ impl App {
             last_scan: None,
             scanning: false,
             spinner_tick: 0,
+            diagnostic: None,
             rx: None,
             iface,
             should_quit: false,
@@ -123,10 +126,24 @@ impl App {
         // macOS/Location-Services advisory: all SSIDs redacted.
         if self.backend == "CoreWLAN" && !nets.is_empty() && nets.iter().all(|n| n.ssid == "<hidden>") {
             self.advisory = Some(
-                "macOS redacts SSIDs without Location Services — enable it for this terminal to see network names.".into(),
+                "macOS redacts SSIDs without Location Services — allow openwifidiag in Privacy & Security > Location Services, then press r.".into(),
             );
         } else {
             self.advisory = None;
+        }
+        if let Some(diagnostic) = &mut self.diagnostic {
+            let target = if diagnostic.target.bssid.is_empty() {
+                nets.iter().find(|network| {
+                    diagnostic.target.ssid != "<hidden>" && network.ssid == diagnostic.target.ssid
+                })
+            } else {
+                nets.iter().find(|network| {
+                    network
+                        .bssid
+                        .eq_ignore_ascii_case(&diagnostic.target.bssid)
+                })
+            };
+            diagnostic.record_scan(target);
         }
         self.networks = nets;
         self.sort();
@@ -149,9 +166,17 @@ impl App {
     }
 
     pub fn on_tick(&mut self) {
+        if let Some(diagnostic) = &mut self.diagnostic {
+            diagnostic.on_tick();
+        }
+        let scan_interval = if self.diagnostic.is_some() {
+            Duration::from_secs(1)
+        } else {
+            self.interval
+        };
         if !self.scanning {
             if let Some(last) = self.last_scan {
-                if last.elapsed() >= self.interval {
+                if last.elapsed() >= scan_interval {
                     self.start_scan();
                 }
             } else {
@@ -165,5 +190,18 @@ impl App {
         self.last_scan.map(|l| {
             self.interval.as_secs().saturating_sub(l.elapsed().as_secs())
         })
+    }
+
+    pub fn start_diagnostic(&mut self) {
+        let Some(network) = self.networks.get(self.selected).cloned() else {
+            return;
+        };
+        self.diagnostic = Some(LiveDiagnostic::new(network));
+        self.last_scan = None;
+    }
+
+    pub fn stop_diagnostic(&mut self) {
+        self.diagnostic = None;
+        self.last_scan = None;
     }
 }

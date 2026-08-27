@@ -2,7 +2,13 @@
   "name": "openwifidiag",
   "version": "0.1.0",
   "description": "Terminal WiFi diagnostics — scan and monitor near-by networks",
+  "keywords": ["wifi", "wi-fi", "wireless", "network", "diagnostics", "cli"],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SunnySkye/openwifidiag.git"
+  },
+  "publishConfig": { "access": "public" },
   "bin": {
     "openwifidiag": "bin/openwifidiag.js"
   },

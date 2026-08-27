@@ -52,7 +52,8 @@ jobs:
       - name: Assemble platform packages
         run: node scripts/pack.js
       - name: Publish platform packages
-        env: { NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }} }
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -e
           for dir in npm/openwifidiag-*; do

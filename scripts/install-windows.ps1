@@ -5,11 +5,15 @@ param(
 )
 $ErrorActionPreference = "Stop"
 
-$architecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
-if ($architecture -notin @("X64", "Arm64")) {
-    throw "No prebuilt openwifidiag release is available for Windows architecture '$architecture'."
+$architecture = @(
+    $env:PROCESSOR_ARCHITEW6432
+    $env:PROCESSOR_ARCHITECTURE
+) | Where-Object { $_ } | Select-Object -First 1
+if ($architecture -match '^(x86|i[3-6]86)$') {
+    throw "openwifidiag requires 64-bit Windows; detected '$architecture'."
 }
-# Windows on Arm can run the x64 release through Windows' x64 emulation.
+# Windows on Arm can run the x64 release through Windows' x64 emulation. If
+# architecture variables are unavailable, continue and let Windows load the binary.
 $platform = "win32-x64"
 $base = "https://github.com/SunnySkye/openwifidiag/releases"
 $url = if ($Version -eq "latest") { "$base/latest/download/openwifidiag-$platform.exe" } else { "$base/download/$Version/openwifidiag-$platform.exe" }

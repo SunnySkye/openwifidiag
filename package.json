@@ -1,6 +1,6 @@
 {
   "name": "openwifidiag",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Terminal WiFi diagnostics — scan and monitor near-by networks",
   "keywords": ["wifi", "wi-fi", "wireless", "network", "diagnostics", "cli"],
   "license": "MIT",

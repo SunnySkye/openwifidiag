@@ -1,11 +1,13 @@
 #!/usr/bin/env sh
 set -eu
 
-# macOS source installer. Run it from an openwifidiag checkout. It prefers a
-# supplied or existing binary and bootstraps the Rust build tools when needed.
+# Standalone macOS installer. It downloads a prebuilt GitHub Release by default
+# and can optionally build from a source checkout for development.
 
 PREFIX="${OPENWIFIDIAG_PREFIX:-/usr/local}"
 APP_ROOT="${OPENWIFIDIAG_APP_ROOT:-$HOME/Applications}"
+REPO="SunnySkye/openwifidiag"
+VERSION="${OPENWIFIDIAG_VERSION:-latest}"
 BAR_WIDTH=28
 
 if [ -t 1 ] && [ "${TERM:-dumb}" != "dumb" ] && [ -z "${NO_COLOR:-}" ]; then
@@ -80,15 +82,14 @@ case "$(uname -s)" in
 esac
 
 case "$(uname -m)" in
-  arm64|x86_64) ;;
+  arm64) platform="darwin-arm64" ;;
+  x86_64) platform="darwin-x64" ;;
   *) fail "Unsupported macOS architecture: $(uname -m)" ;;
 esac
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" 2>/dev/null && pwd) || \
   fail "Could not locate the installer directory."
 source_dir=$(dirname "$script_dir")
-plist="$source_dir/resources/macos/Info.plist"
-entitlements="$source_dir/resources/macos/entitlements.plist"
 
 printf '\n%s%s' "$BOLD" "$AQUA"
 printf '  ╭────────────────────────────────────────────────────╮\n'
@@ -100,9 +101,10 @@ printf '  ╰──────────────────────�
 printf '%s\n' "$RESET"
 
 progress 5 "Checking local project"
-[ -f "$source_dir/Cargo.toml" ] || fail "Cargo.toml was not found at $source_dir. Run this script from the repository checkout."
-[ -f "$plist" ] || fail "Missing local app metadata: $plist"
-[ -f "$entitlements" ] || fail "Missing local entitlements: $entitlements"
+has_checkout=0
+if [ -f "$source_dir/Cargo.toml" ]; then
+  has_checkout=1
+fi
 
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/openwifidiag-install.XXXXXX") || fail "Could not create a temporary directory."
 cleanup() {
@@ -112,6 +114,31 @@ trap cleanup EXIT
 trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
+
+plist="$tmp/Info.plist"
+entitlements="$tmp/entitlements.plist"
+if [ -f "$source_dir/resources/macos/Info.plist" ] && [ -f "$source_dir/resources/macos/entitlements.plist" ]; then
+  cp "$source_dir/resources/macos/Info.plist" "$plist"
+  cp "$source_dir/resources/macos/entitlements.plist" "$entitlements"
+else
+  printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' \
+    '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
+    '<plist version="1.0"><dict>' \
+    '<key>CFBundleIdentifier</key><string>dev.openwifidiag.cli</string>' \
+    '<key>CFBundleName</key><string>OpenWiFiDiag</string>' \
+    '<key>CFBundleDisplayName</key><string>OpenWiFiDiag</string>' \
+    '<key>CFBundleExecutable</key><string>openwifidiag</string>' \
+    '<key>CFBundlePackageType</key><string>APPL</string>' \
+    '<key>LSUIElement</key><true/>' \
+    '<key>NSLocationWhenInUseUsageDescription</key><string>openwifidiag uses your location permission only to read nearby Wi-Fi network names and identifiers.</string>' \
+    '<key>NSLocationUsageDescription</key><string>openwifidiag uses your location permission only to read nearby Wi-Fi network names and identifiers.</string>' \
+    '</dict></plist>' >"$plist"
+  printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' \
+    '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
+    '<plist version="1.0"><dict>' \
+    '<key>com.apple.security.personal-information.location</key><true/>' \
+    '</dict></plist>' >"$entitlements"
+fi
 
 progress 15 "Preparing local files"
 binary="$tmp/openwifidiag"
@@ -146,19 +173,26 @@ install_build_dependencies() {
   [ -n "$cargo_cmd" ] || fail "Rust was installed, but cargo could not be found at $HOME/.cargo/bin/cargo."
 }
 
-if [ -n "${OPENWIFIDIAG_BINARY:-}" ]; then
-  local_binary=$OPENWIFIDIAG_BINARY
-  case "$local_binary" in
-    /*) ;;
-    *) local_binary="$(pwd)/$local_binary" ;;
-  esac
-  [ -f "$local_binary" ] || fail "OPENWIFIDIAG_BINARY does not exist: $local_binary"
-  progress 55 "Using supplied local binary"
-  cp "$local_binary" "$binary" || fail "Could not stage $local_binary."
-elif [ -x "$source_dir/target/release/openwifidiag" ]; then
-  progress 55 "Using existing local release binary"
-  cp "$source_dir/target/release/openwifidiag" "$binary" || fail "Could not stage the existing local binary."
-else
+download_release_binary() {
+  command -v curl >/dev/null 2>&1 || fail "curl is required to download the GitHub release."
+  if [ "$VERSION" = "latest" ]; then
+    url="https://github.com/$REPO/releases/latest/download/openwifidiag-$platform"
+  else
+    url="https://github.com/$REPO/releases/download/$VERSION/openwifidiag-$platform"
+  fi
+  progress 25 "Downloading $platform release"
+  curl --proto '=https' --tlsv1.2 -fL "$url" -o "$binary" || \
+    fail "Could not download $url. Check that the requested release and architecture exist."
+  progress 55 "Release download complete"
+}
+
+build_from_source() {
+  [ "$has_checkout" -eq 1 ] || fail "A source checkout is required when OPENWIFIDIAG_BUILD_FROM_SOURCE=1."
+  if [ -x "$source_dir/target/release/openwifidiag" ]; then
+    progress 55 "Using existing local release binary"
+    cp "$source_dir/target/release/openwifidiag" "$binary" || fail "Could not stage the existing local binary."
+    return
+  fi
   find_cargo
   if [ -z "$cargo_cmd" ]; then
     install_build_dependencies
@@ -173,6 +207,21 @@ else
     tail -n 20 "$build_log" >&2
     fail "The local Rust build failed."
   fi
+}
+
+if [ -n "${OPENWIFIDIAG_BINARY:-}" ]; then
+  local_binary=$OPENWIFIDIAG_BINARY
+  case "$local_binary" in
+    /*) ;;
+    *) local_binary="$(pwd)/$local_binary" ;;
+  esac
+  [ -f "$local_binary" ] || fail "OPENWIFIDIAG_BINARY does not exist: $local_binary"
+  progress 55 "Using supplied local binary"
+  cp "$local_binary" "$binary" || fail "Could not stage $local_binary."
+elif [ "${OPENWIFIDIAG_BUILD_FROM_SOURCE:-0}" = "1" ]; then
+  build_from_source
+else
+  download_release_binary
 fi
 
 chmod 755 "$binary"

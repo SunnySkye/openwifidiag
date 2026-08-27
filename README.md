@@ -57,14 +57,12 @@ tiny JS launcher in `bin/`.
 
 ## Native installers
 
-The macOS installer packages files from the current checkout. It uses a
-supplied or existing binary when available; otherwise it installs the minimal
-Rust toolchain and builds the app. The Linux and Windows installers use the
-matching release asset:
+The installers download the matching prebuilt binary from the latest GitHub
+Release, so Rust and a source checkout are not required:
 
 ```sh
-# macOS — run from a local checkout
-./scripts/install-macos.sh
+# macOS
+curl -fsSL https://raw.githubusercontent.com/SunnySkye/openwifidiag/main/scripts/install-macos.sh | sh
 
 # Linux
 curl -fsSL https://raw.githubusercontent.com/SunnySkye/openwifidiag/main/scripts/install-linux.sh | sh
@@ -76,12 +74,13 @@ On Windows PowerShell:
 irm https://raw.githubusercontent.com/SunnySkye/openwifidiag/main/scripts/install-windows.ps1 | iex
 ```
 
-Set `OPENWIFIDIAG_PREFIX` on macOS/Linux to change `/usr/local`, or pass
-`-InstallDir` on Windows. The macOS installer builds the checked-out source or
-uses `OPENWIFIDIAG_BINARY=/path/to/openwifidiag` when supplied. If a build is
-needed, it checks for Apple's Command Line Tools and installs Rust from the
-official `sh.rustup.rs` installer. Set `OPENWIFIDIAG_VERSION` (for example
-`v0.1.6`) to install a specific Linux release.
+You can also download the appropriate installer directly from the repository's
+GitHub Releases page and run it. Set `OPENWIFIDIAG_PREFIX` on macOS/Linux to
+change `/usr/local`, or pass `-InstallDir` on Windows. Set
+`OPENWIFIDIAG_VERSION` (for example `v0.1.6`) to install a specific release.
+Developers can run the macOS script from a checkout with
+`OPENWIFIDIAG_BUILD_FROM_SOURCE=1`; that mode bootstraps the Rust build tools
+when needed.
 
 ## Permissions
 

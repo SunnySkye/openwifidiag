@@ -1,6 +1,6 @@
 {
   "name": "openwifidiag",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Terminal WiFi diagnostics — scan and monitor near-by networks",
   "keywords": ["wifi", "wi-fi", "wireless", "network", "diagnostics", "cli"],
   "license": "MIT",
@@ -15,11 +15,11 @@
   "files": ["bin"],
   "engines": { "node": ">=18" },
   "optionalDependencies": {
-    "openwifidiag-darwin-arm64": "0.1.5",
-    "openwifidiag-darwin-x64": "0.1.5",
-    "openwifidiag-linux-arm64": "0.1.5",
-    "openwifidiag-linux-x64": "0.1.5",
-    "openwifidiag-win32-x64": "0.1.5"
+    "openwifidiag-darwin-arm64": "0.1.6",
+    "openwifidiag-darwin-x64": "0.1.6",
+    "openwifidiag-linux-arm64": "0.1.6",
+    "openwifidiag-linux-x64": "0.1.6",
+    "openwifidiag-win32-x64": "0.1.6"
   },
   "scripts": {
     "pack": "node scripts/pack.js"

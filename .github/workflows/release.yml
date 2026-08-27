@@ -58,7 +58,7 @@ jobs:
           set -e
           for dir in npm/openwifidiag-*; do
             if [ -f "$dir/bin/openwifidiag" ] || [ -f "$dir/bin/openwifidiag.exe" ]; then
-              npm publish --access public "$dir"
+              npm publish --access public "./$dir"
             fi
           done
           npm publish --access public .

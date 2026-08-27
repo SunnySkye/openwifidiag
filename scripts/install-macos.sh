@@ -181,7 +181,7 @@ download_release_binary() {
     url="https://github.com/$REPO/releases/download/$VERSION/openwifidiag-$platform"
   fi
   progress 25 "Downloading $platform release"
-  curl --proto '=https' --tlsv1.2 -fL "$url" -o "$binary" || \
+  curl --proto '=https' --tlsv1.2 -fsSL "$url" -o "$binary" || \
     fail "Could not download $url. Check that the requested release and architecture exist."
   progress 55 "Release download complete"
 }
@@ -229,6 +229,17 @@ app="$APP_ROOT/OpenWiFiDiag.app"
 staged_app="$tmp/OpenWiFiDiag.app"
 dest_dir="$PREFIX/bin"
 dest="$dest_dir/openwifidiag"
+sudo_ready=0
+
+request_admin() {
+  if [ "$sudo_ready" -eq 0 ]; then
+    finish_progress
+    printf '\n  %s%sAdministrator permission required%s\n' "$VIOLET" "$BOLD" "$RESET"
+    printf '  macOS may ask for your password to install the terminal command in %s.\n\n' "$dest_dir"
+    sudo -v || fail "Administrator permission was not granted."
+    sudo_ready=1
+  fi
+}
 
 progress 68 "Creating macOS app bundle"
 mkdir -p "$staged_app/Contents/MacOS" || fail "Could not create the staged app bundle."
@@ -257,13 +268,17 @@ fi
 progress 96 "Linking terminal command"
 if [ ! -d "$dest_dir" ]; then
   if ! mkdir -p "$dest_dir" 2>/dev/null; then
+    request_admin
     sudo mkdir -p "$dest_dir" || fail "Could not create $dest_dir"
+    progress 96 "Linking terminal command"
   fi
 fi
 if [ -w "$dest_dir" ]; then
   ln -sfn "$app/Contents/MacOS/openwifidiag" "$dest" || fail "Could not link the terminal command."
 else
+  request_admin
   sudo ln -sfn "$app/Contents/MacOS/openwifidiag" "$dest" || fail "Could not link the terminal command."
+  progress 96 "Linking terminal command"
 fi
 
 progress 100 "Installation complete"
@@ -273,4 +288,8 @@ printf '\n  %s%s✓ OpenWiFiDiag is ready%s\n\n' "$GREEN" "$BOLD" "$RESET"
 info "App       $app"
 info "Command   $dest"
 info "Launch    openwifidiag"
-printf '\n  %sBuild dependencies are installed only when no usable local binary exists.%s\n\n' "$MUTED" "$RESET"
+if [ "${OPENWIFIDIAG_BUILD_FROM_SOURCE:-0}" = "1" ]; then
+  printf '\n  %sBuild dependencies were used only for the requested source build.%s\n\n' "$MUTED" "$RESET"
+else
+  printf '\n  %sInstalled from a prebuilt GitHub Release; no Rust toolchain was required.%s\n\n' "$MUTED" "$RESET"
+fi

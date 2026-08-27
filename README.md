@@ -57,11 +57,13 @@ tiny JS launcher in `bin/`.
 
 ## Native installers
 
-The macOS installer packages files from the current checkout and does not use
-the network. The Linux and Windows installers use the matching release asset:
+The macOS installer packages files from the current checkout. It uses a
+supplied or existing binary when available; otherwise it installs the minimal
+Rust toolchain and builds the app. The Linux and Windows installers use the
+matching release asset:
 
 ```sh
-# macOS — run from a local checkout (the installer performs no downloads)
+# macOS — run from a local checkout
 ./scripts/install-macos.sh
 
 # Linux
@@ -76,9 +78,10 @@ irm https://raw.githubusercontent.com/SunnySkye/openwifidiag/main/scripts/instal
 
 Set `OPENWIFIDIAG_PREFIX` on macOS/Linux to change `/usr/local`, or pass
 `-InstallDir` on Windows. The macOS installer builds the checked-out source or
-uses `OPENWIFIDIAG_BINARY=/path/to/openwifidiag` when supplied; it never
-contacts GitHub or another remote service. Set `OPENWIFIDIAG_VERSION` (for
-example `v0.1.6`) to install a specific Linux release.
+uses `OPENWIFIDIAG_BINARY=/path/to/openwifidiag` when supplied. If a build is
+needed, it checks for Apple's Command Line Tools and installs Rust from the
+official `sh.rustup.rs` installer. Set `OPENWIFIDIAG_VERSION` (for example
+`v0.1.6`) to install a specific Linux release.
 
 ## Permissions
 

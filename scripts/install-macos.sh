@@ -1,8 +1,8 @@
 #!/usr/bin/env sh
 set -eu
 
-# Local-only macOS installer. This script never downloads release assets or
-# source files; run it from an openwifidiag checkout.
+# macOS source installer. Run it from an openwifidiag checkout. It prefers a
+# supplied or existing binary and bootstraps the Rust build tools when needed.
 
 PREFIX="${OPENWIFIDIAG_PREFIX:-/usr/local}"
 APP_ROOT="${OPENWIFIDIAG_APP_ROOT:-$HOME/Applications}"
@@ -93,7 +93,7 @@ entitlements="$source_dir/resources/macos/entitlements.plist"
 printf '\n%s%s' "$BOLD" "$AQUA"
 printf '  ╭────────────────────────────────────────────────────╮\n'
 printf '  │                                                    │\n'
-printf '  │   OpenWiFiDiag  ·  macOS local installer          │\n'
+printf '  │   OpenWiFiDiag  ·  macOS installer                │\n'
 printf '  │   Signal clarity, beautifully packaged.           │\n'
 printf '  │                                                    │\n'
 printf '  ╰────────────────────────────────────────────────────╯\n'
@@ -116,6 +116,35 @@ trap 'exit 143' TERM
 progress 15 "Preparing local files"
 binary="$tmp/openwifidiag"
 build_log="$tmp/build.log"
+cargo_cmd=""
+
+find_cargo() {
+  if command -v cargo >/dev/null 2>&1; then
+    cargo_cmd=$(command -v cargo)
+  elif [ -x "$HOME/.cargo/bin/cargo" ]; then
+    cargo_cmd="$HOME/.cargo/bin/cargo"
+  fi
+}
+
+install_build_dependencies() {
+  progress 18 "Checking build dependencies"
+  if ! xcode-select -p >/dev/null 2>&1; then
+    xcode-select --install >/dev/null 2>&1 || true
+    fail "Apple Command Line Tools are required. Complete the installation window that just opened, then run this installer again."
+  fi
+  command -v curl >/dev/null 2>&1 || fail "curl is required to install the Rust toolchain."
+
+  progress 22 "Installing the Rust toolchain"
+  rustup_installer="$tmp/rustup-init.sh"
+  curl --proto '=https' --tlsv1.2 -fsS https://sh.rustup.rs -o "$rustup_installer" || \
+    fail "Could not download the official Rust installer from https://sh.rustup.rs."
+  if ! sh "$rustup_installer" -y --profile minimal --no-modify-path >"$tmp/rustup.log" 2>&1; then
+    tail -n 20 "$tmp/rustup.log" >&2
+    fail "The Rust toolchain installation failed."
+  fi
+  find_cargo
+  [ -n "$cargo_cmd" ] || fail "Rust was installed, but cargo could not be found at $HOME/.cargo/bin/cargo."
+}
 
 if [ -n "${OPENWIFIDIAG_BINARY:-}" ]; then
   local_binary=$OPENWIFIDIAG_BINARY
@@ -126,33 +155,24 @@ if [ -n "${OPENWIFIDIAG_BINARY:-}" ]; then
   [ -f "$local_binary" ] || fail "OPENWIFIDIAG_BINARY does not exist: $local_binary"
   progress 55 "Using supplied local binary"
   cp "$local_binary" "$binary" || fail "Could not stage $local_binary."
-elif command -v cargo >/dev/null 2>&1; then
-  progress 25 "Building optimized local binary"
-  if (cd "$source_dir" && cargo build --release --locked --offline) >"$build_log" 2>&1; then
-    progress 55 "Local build complete"
-    cp "$source_dir/target/release/openwifidiag" "$binary" || fail "The local build did not produce a binary."
-  else
-    finish_progress
-    printf '\n%sBuild output:%s\n' "$MUTED" "$RESET" >&2
-    tail -n 20 "$build_log" >&2
-    fail "The local Rust build failed."
-  fi
-elif [ -x "$HOME/.cargo/bin/cargo" ]; then
-  progress 25 "Building optimized local binary"
-  if (cd "$source_dir" && "$HOME/.cargo/bin/cargo" build --release --locked --offline) >"$build_log" 2>&1; then
-    progress 55 "Local build complete"
-    cp "$source_dir/target/release/openwifidiag" "$binary" || fail "The local build did not produce a binary."
-  else
-    finish_progress
-    printf '\n%sBuild output:%s\n' "$MUTED" "$RESET" >&2
-    tail -n 20 "$build_log" >&2
-    fail "The local Rust build failed."
-  fi
 elif [ -x "$source_dir/target/release/openwifidiag" ]; then
   progress 55 "Using existing local release binary"
   cp "$source_dir/target/release/openwifidiag" "$binary" || fail "Could not stage the existing local binary."
 else
-  fail "No local binary or Rust toolchain was found. Build with 'cargo build --release --offline', or set OPENWIFIDIAG_BINARY to a local binary."
+  find_cargo
+  if [ -z "$cargo_cmd" ]; then
+    install_build_dependencies
+  fi
+  progress 25 "Building optimized local binary"
+  if (cd "$source_dir" && "$cargo_cmd" build --release --locked) >"$build_log" 2>&1; then
+    progress 55 "Local build complete"
+    cp "$source_dir/target/release/openwifidiag" "$binary" || fail "The local build did not produce a binary."
+  else
+    finish_progress
+    printf '\n%sBuild output:%s\n' "$MUTED" "$RESET" >&2
+    tail -n 20 "$build_log" >&2
+    fail "The local Rust build failed."
+  fi
 fi
 
 chmod 755 "$binary"
@@ -204,4 +224,4 @@ printf '\n  %s%s✓ OpenWiFiDiag is ready%s\n\n' "$GREEN" "$BOLD" "$RESET"
 info "App       $app"
 info "Command   $dest"
 info "Launch    openwifidiag"
-printf '\n  %sNo files were downloaded during installation.%s\n\n' "$MUTED" "$RESET"
+printf '\n  %sBuild dependencies are installed only when no usable local binary exists.%s\n\n' "$MUTED" "$RESET"

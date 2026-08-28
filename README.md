@@ -12,6 +12,12 @@ signal strength) on macOS, Linux, and Windows. Written in Rust on top of
 - Select an access point and press `Enter` or `d` for a live diagnostic view:
   BSSID-specific signal history, latency, packet loss, and min/average/max
   readings. This is useful for walking around and finding WiFi dead zones.
+- In the diagnostic view, press `t` to run a **downstream stress test**: four
+  parallel downloads saturate the link (via `curl`, discarding the payload)
+  while signal, latency, and loss sampling continue, surfacing issues that
+  idle probing hides — bufferbloat latency spikes, packet loss under load,
+  and radio/driver drops. Throughput, totals, and a throughput history
+  sparkline are shown alongside the stressed latency graph.
 - Columns: SSID, signal (bar + dBm), channel, band (2.4/5/6 GHz), BSSID,
   security classification (Open, WEP, WPA, WPA2, WPA3).
 - Input via platform-native backends:
@@ -36,7 +42,9 @@ openwifidiag --json   # one-shot JSON scan
 
 Keybindings: `q` quit, `r` refresh, `s` cycle sort, `↑/↓` or `j/k` navigate
 selection, `g`/`G` top/bottom, and `Enter` or `d` to diagnose the selected
-access point. In diagnostic view, press `Esc` or `Backspace` to return.
+access point. In diagnostic view, press `Esc` or `Backspace` to return and
+`t` to toggle the downstream stress test (requires `curl`; bundled with
+macOS, most Linux distros, and Windows 10+).
 
 When the scanner provides a BSSID, the diagnostic signal graph follows that
 specific access point even if several access points share an SSID. Otherwise,
@@ -75,12 +83,28 @@ irm https://github.com/SunnySkye/openwifidiag/releases/latest/download/install-w
 ```
 
 You can also download the appropriate installer directly from the repository's
-GitHub Releases page and run it. Set `OPENWIFIDIAG_PREFIX` on macOS/Linux to
+GitHub Releases page and run it. All installers can install a local package
+instead of downloading a release:
+
+```sh
+# Install a locally built binary (e.g. target/release/openwifidiag)
+sh install-macos.sh --binary path/to/openwifidiag     # macOS
+sh install-linux.sh --binary path/to/openwifidiag     # Linux
+.\install-windows.ps1 -Binary path\to\openwifidiag.exe # Windows
+
+# Or build and install from a local source checkout
+sh install-macos.sh --source   # bootstraps the Rust toolchain if needed
+sh install-linux.sh --source   # requires cargo
+.\install-windows.ps1 -FromSource
+```
+
+Set `OPENWIFIDIAG_PREFIX` on macOS/Linux to
 change `/usr/local`, or pass `-InstallDir` on Windows. Set
-`OPENWIFIDIAG_VERSION` (for example `v0.1.6`) to install a specific release.
-Developers can run the macOS script from a checkout with
-`OPENWIFIDIAG_BUILD_FROM_SOURCE=1`; that mode bootstraps the Rust build tools
-when needed.
+`OPENWIFIDIAG_VERSION` (for example `v0.1.7`) to install a specific release.
+The `--binary` / `-Binary` and `--source` / `-FromSource` choices can also be
+made via the `OPENWIFIDIAG_BINARY` and `OPENWIFIDIAG_BUILD_FROM_SOURCE=1`
+environment variables. Note that the default (download) path installs the
+latest *published* release, which may lag behind a source checkout.
 
 ## Permissions
 
@@ -123,6 +147,7 @@ src/
   app.rs             application state, background scan thread
   ui.rs              ratatui rendering
   model.rs           WifiNetwork, Security, Band
+  stress.rs          downstream stress test (parallel curl downloads)
   scanner/
     mod.rs           Scanner trait + platform factory
     parsers.rs       pure parsers (iw/nmcli/netsh/airport) + tests

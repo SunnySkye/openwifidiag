@@ -6,6 +6,7 @@ use ratatui::Frame;
 
 use crate::app::App;
 use crate::diagnostics::{LiveDiagnostic, PROBE_TARGET};
+use crate::stress::{STRESS_HOST, STRESS_WORKERS};
 
 const SPINNER: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
@@ -130,12 +131,13 @@ fn render_diagnostic(
     scanning: bool,
     spinner_tick: usize,
 ) {
-    let [header, radio, network, signal_chart, latency_chart, note, footer] = Layout::vertical([
+    let [header, radio, network, signal_chart, latency_chart, stress_panel, note, footer] = Layout::vertical([
         Constraint::Length(2),
         Constraint::Length(3),
         Constraint::Length(3),
         Constraint::Fill(1),
         Constraint::Fill(1),
+        Constraint::Length(4),
         Constraint::Length(2),
         Constraint::Length(1),
     ])
@@ -238,12 +240,22 @@ fn render_diagnostic(
         latency_chart,
     );
 
-    let note_text = match &diagnostic.probe_error {
-        Some(error) => Line::from(Span::styled(
+    let stress = render_stress(f, diagnostic, stress_panel, spinner_tick);
+
+    let note_text = match (&diagnostic.probe_error, &stress) {
+        (Some(error), _) => Line::from(Span::styled(
             format!(" ⚠ {error}"),
             Style::default().fg(Color::Red),
         )),
-        None => {
+        (None, Some(StressLine::Error(error))) => Line::from(Span::styled(
+            format!(" ⚠ {error}"),
+            Style::default().fg(Color::Red),
+        )),
+        (None, None) if diagnostic.stress.running() => Line::from(Span::styled(
+            " ⚠ Stress test is saturating the downstream — latency/loss readings reflect that load.",
+            Style::default().fg(Color::Yellow),
+        )),
+        (None, None) => {
             let tracking = if diagnostic.target.bssid.is_empty() {
                 "BSSID unavailable: signal follows the SSID and may switch APs"
             } else {
@@ -259,10 +271,119 @@ fn render_diagnostic(
     };
     f.render_widget(Paragraph::new(note_text), note);
     f.render_widget(
-        Paragraph::new(" esc/backspace return │ r sample now │ q quit ")
+        Paragraph::new(" esc/backspace return │ r sample now │ t stress test │ q quit ")
             .style(Style::default().fg(Color::DarkGray)),
         footer,
     );
+}
+
+/// Renders the stress-test panel; returns Some(error) when the load failed.
+fn render_stress(
+    f: &mut Frame,
+    diagnostic: &LiveDiagnostic,
+    area: Rect,
+    spinner_tick: usize,
+) -> Option<StressLine> {
+    let stress = &diagnostic.stress;
+    if let Some(error) = stress.error() {
+        let line = StressLine::Error(error.to_owned());
+        f.render_widget(
+            Paragraph::new(vec![
+                Line::from(Span::styled(
+                    " Stress test failed ",
+                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                )),
+                Line::from(Span::styled(
+                    format!(" ⚠ {error}"),
+                    Style::default().fg(Color::Red),
+                )),
+            ])
+            .block(Block::default().borders(Borders::ALL).title(" Stress test ")),
+            area,
+        );
+        return Some(line);
+    }
+
+    let running = stress.running();
+    let status = if running {
+        format!("running • {STRESS_WORKERS} workers")
+    } else if stress.total_bytes() > 0 {
+        "stopped".into()
+    } else {
+        "idle".into()
+    };
+    let megabytes = stress.total_bytes() as f64 / (1024.0 * 1024.0);
+    let summary = if stress.total_bytes() > 0 {
+        format!(
+            " Transferred: {megabytes:.1} MB in {}s   Average: {:.1} Mbps{}",
+            stress.elapsed_secs().unwrap_or(0),
+            stress.average_mbps().unwrap_or(0.0),
+            if running {
+                stress
+                    .current_mbps()
+                    .map(|mbps| format!("   Current: {mbps} Mbps"))
+                    .unwrap_or_default()
+            } else {
+                String::new()
+            },
+        )
+    } else {
+        format!(
+            " press t to saturate the downstream with {STRESS_WORKERS} parallel downloads from {}",
+            STRESS_HOST
+        )
+    };
+    let status_span = if running {
+        Span::styled(
+            format!("{} {status}", SPINNER[spinner_tick % SPINNER.len()]),
+            Style::default().fg(Color::Yellow),
+        )
+    } else {
+        Span::styled(status, Style::default().fg(Color::DarkGray))
+    };
+    let mut lines = vec![Line::from(vec![
+        Span::raw(" Status: "),
+        status_span,
+    ])];
+    if stress.total_bytes() > 0 {
+        lines.push(Line::from(Span::raw(summary)));
+        let data = stress.throughput_data();
+        let max = data.iter().copied().max().unwrap_or(10).max(10);
+        f.render_widget(
+            Sparkline::default()
+                .data(&data)
+                .max(max)
+                .style(Style::default().fg(if running { Color::Cyan } else { Color::DarkGray })),
+            inner(area, 2, 1),
+        );
+    } else {
+        lines.push(Line::from(Span::styled(
+            summary,
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
+    f.render_widget(
+        Paragraph::new(lines).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Stress test (downstream load) "),
+        ),
+        area,
+    );
+    None
+}
+
+fn inner(area: Rect, skip_top: u16, height: u16) -> Rect {
+    Rect {
+        x: area.x + 1,
+        y: area.y + skip_top,
+        width: area.width.saturating_sub(2),
+        height: height.min(area.height.saturating_sub(skip_top + 1)),
+    }
+}
+
+enum StressLine {
+    Error(String),
 }
 
 fn signal_quality(rssi: i32) -> &'static str {

@@ -5,6 +5,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::model::WifiNetwork;
+use crate::stress::StressTest;
 
 pub const PROBE_TARGET: &str = "1.1.1.1";
 const HISTORY_LENGTH: usize = 120;
@@ -26,6 +27,8 @@ pub struct LiveDiagnostic {
     last_probe: Option<Instant>,
     probe_rx: Option<Receiver<ProbeResult>>,
     pub probe_error: Option<String>,
+    /// Optional downstream stress load running alongside the probes.
+    pub stress: StressTest,
 }
 
 impl LiveDiagnostic {
@@ -42,11 +45,13 @@ impl LiveDiagnostic {
             last_probe: None,
             probe_rx: None,
             probe_error: None,
+            stress: StressTest::new(),
         }
     }
 
     pub fn on_tick(&mut self) {
         self.poll_probe();
+        self.stress.on_tick();
         let probe_due = self
             .last_probe
             .map(|last| last.elapsed() >= PROBE_INTERVAL)

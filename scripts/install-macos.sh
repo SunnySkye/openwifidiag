@@ -76,6 +76,48 @@ fail() {
   exit 1
 }
 
+usage() {
+  printf 'Usage: %s [options]\n\n' "$0"
+  printf 'Options:\n'
+  printf '  --binary PATH   Install this local openwifidiag binary instead of downloading a release.\n'
+  printf '  --source        Build and install from the local source checkout (bootstraps Rust if needed).\n'
+  printf '  -h, --help      Show this help and exit.\n\n'
+  printf 'Environment:\n'
+  printf '  OPENWIFIDIAG_BINARY              Same as --binary.\n'
+  printf '  OPENWIFIDIAG_BUILD_FROM_SOURCE=1 Same as --source.\n'
+  printf '  OPENWIFIDIAG_PREFIX              Install prefix for the command link (default: /usr/local).\n'
+  printf '  OPENWIFIDIAG_VERSION             Release tag to download (default: latest).\n'
+}
+
+# Flags win over environment variables; without either a release is downloaded.
+binary_override="${OPENWIFIDIAG_BINARY:-}"
+from_source="${OPENWIFIDIAG_BUILD_FROM_SOURCE:-0}"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --binary)
+      [ $# -ge 2 ] || fail "The --binary option requires a path argument."
+      binary_override=$2
+      shift 2
+      ;;
+    --binary=*)
+      binary_override=${1#*=}
+      shift
+      ;;
+    --source)
+      from_source=1
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      usage >&2
+      fail "Unknown option: $1"
+      ;;
+  esac
+done
+
 case "$(uname -s)" in
   Darwin) ;;
   *) fail "This installer supports macOS only." ;;
@@ -187,7 +229,7 @@ download_release_binary() {
 }
 
 build_from_source() {
-  [ "$has_checkout" -eq 1 ] || fail "A source checkout is required when OPENWIFIDIAG_BUILD_FROM_SOURCE=1."
+  [ "$has_checkout" -eq 1 ] || fail "A source checkout is required for --source (or OPENWIFIDIAG_BUILD_FROM_SOURCE=1)."
   if [ -x "$source_dir/target/release/openwifidiag" ]; then
     progress 55 "Using existing local release binary"
     cp "$source_dir/target/release/openwifidiag" "$binary" || fail "Could not stage the existing local binary."
@@ -209,16 +251,16 @@ build_from_source() {
   fi
 }
 
-if [ -n "${OPENWIFIDIAG_BINARY:-}" ]; then
-  local_binary=$OPENWIFIDIAG_BINARY
+if [ -n "$binary_override" ]; then
+  local_binary=$binary_override
   case "$local_binary" in
     /*) ;;
     *) local_binary="$(pwd)/$local_binary" ;;
   esac
-  [ -f "$local_binary" ] || fail "OPENWIFIDIAG_BINARY does not exist: $local_binary"
+  [ -f "$local_binary" ] || fail "--binary does not exist: $local_binary"
   progress 55 "Using supplied local binary"
   cp "$local_binary" "$binary" || fail "Could not stage $local_binary."
-elif [ "${OPENWIFIDIAG_BUILD_FROM_SOURCE:-0}" = "1" ]; then
+elif [ "$from_source" = "1" ]; then
   build_from_source
 else
   download_release_binary
@@ -287,9 +329,12 @@ finish_progress
 printf '\n  %s%s✓ OpenWiFiDiag is ready%s\n\n' "$GREEN" "$BOLD" "$RESET"
 info "App       $app"
 info "Command   $dest"
+info "Version   $("$dest" --version 2>/dev/null || printf 'unknown')"
 info "Launch    openwifidiag"
-if [ "${OPENWIFIDIAG_BUILD_FROM_SOURCE:-0}" = "1" ]; then
-  printf '\n  %sBuild dependencies were used only for the requested source build.%s\n\n' "$MUTED" "$RESET"
+if [ -n "$binary_override" ]; then
+  printf '\n  %sInstalled from the supplied local binary.%s\n\n' "$MUTED" "$RESET"
+elif [ "$from_source" = "1" ]; then
+  printf '\n  %sBuilt and installed from the local source checkout.%s\n\n' "$MUTED" "$RESET"
 else
   printf '\n  %sInstalled from a prebuilt GitHub Release; no Rust toolchain was required.%s\n\n' "$MUTED" "$RESET"
 fi

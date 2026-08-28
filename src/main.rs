@@ -2,6 +2,7 @@ mod app;
 mod diagnostics;
 mod model;
 mod scanner;
+mod stress;
 mod ui;
 
 use std::io::{self, Write};
@@ -135,6 +136,11 @@ fn handle_key(app: &mut App, code: KeyCode) {
         KeyCode::Esc | KeyCode::Backspace if app.diagnostic.is_some() => app.stop_diagnostic(),
         KeyCode::Enter | KeyCode::Char('d') if app.diagnostic.is_none() => app.start_diagnostic(),
         KeyCode::Char('r') => app.start_scan(),
+        KeyCode::Char('t') if app.diagnostic.is_some() => {
+            if let Some(diagnostic) = &mut app.diagnostic {
+                diagnostic.stress.toggle();
+            }
+        }
         _ if app.diagnostic.is_some() => {}
         KeyCode::Char('s') => {
             app.sort = app.sort.next();
